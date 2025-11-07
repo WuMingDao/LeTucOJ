@@ -20,8 +20,8 @@ public class adviceServiceImpl implements adviceService {
                 .user(userFile)
                 .stream()
                 .content()
-                .map(token -> {
-                    return ServerSentEvent.<String>builder().data(token).build();
-                });
+                .map(token -> ServerSentEvent.<String>builder()
+                        .data(token.replace("\n", "\\x0A").replace(" ", "\\x0B"))
+                        .build());
     }
 }

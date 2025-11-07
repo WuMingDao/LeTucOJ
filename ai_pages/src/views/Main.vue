@@ -21,30 +21,40 @@
         @click="switchTab('rank')"
       >排行榜</div>
 
+      <div
+        class="title-item"
+        :class="{ active: activeTab === 'profile' }"
+        @click="switchTab('profile')"
+      >个人</div>
+
       <!-- 仅管理员可见 -->
       <div
         v-if="showUserTab"
         class="title-item"
         :class="{ active: activeTab === 'user' }"
         @click="switchTab('user')"
-      >用户</div>
+      >管理</div>
 
       <!-- 中间圆角状态框 -->
       <div
+        v-if="isStatusVisible"
         class="nav-status"
         :class="{
           'status-loading': loadStatus === 'loading',
           'status-success': loadStatus === 'success',
           'status-error': loadStatus === 'error'
         }"
-        @click="navStatusClick"
+        @click="hideStatus"
         title="编辑器加载状态（失败可点击重试）"
       >
-        <span v-if="loadStatus === 'loading'">
-          编辑器组件加载中，请加载完毕后再点击列表项
+        <!-- 3. 关键：让 span 不响应鼠标 -->
+        <span style="pointer-events:none;">
+          <template v-if="loadStatus === 'loading'">
+            编辑器组件加载中，请加载完毕后再点击列表项
+          </template>
+          <template v-else-if="loadStatus === 'success'">加载成功</template>
+          <template v-else>加载失败</template>
         </span>
-        <span v-else-if="loadStatus === 'success'">加载成功</span>
-        <span v-else>加载失败</span>
       </div>
 
       <div class="spacer"></div>
@@ -109,7 +119,7 @@ const showUserTab = computed(() => role.value === 'ROOT' || role.value === 'MANA
 
 /* ---------- 3. 标签页初始值 ---------- */
 const initialTab = (typeof route.query.tab === 'string' ? route.query.tab : 'list')
-const activeTab = ref(['list', 'contest', 'rank', 'user'].includes(initialTab) ? initialTab : 'list')
+const activeTab = ref(['list', 'contest', 'rank', 'user', 'profile'].includes(initialTab) ? initialTab : 'list')
 
 /* ---------- 4. 异步组件 ---------- */
 const AsyncProblemList = defineAsyncComponent(() =>
@@ -122,9 +132,12 @@ const AsyncRank = defineAsyncComponent(() =>
   import(/* webpackChunkName: "tab-rank" */ './MainPages/Rank.vue')
 )
 const AsyncUser = defineAsyncComponent(() =>
-  import(/* webpackChunkName: "tab-user" */ '../views/UserPage.vue')
+  import(/* webpackChunkName: "tab-user" */ '../views/ManagePage.vue')
 )
-const compMap = { list: AsyncProblemList, contest: AsyncContest, rank: AsyncRank, user: AsyncUser }
+const AsyncProfile = defineAsyncComponent(() =>
+  import(/* webpackChunkName: "tab-profile" */ './MainPages/User.vue')
+)
+const compMap = { list: AsyncProblemList, contest: AsyncContest, rank: AsyncRank, user: AsyncUser, profile: AsyncProfile }
 const currentComp = computed(() => compMap[activeTab.value])
 
 /* ---------- 5. 切换标签 + URL 同步 ---------- */
@@ -151,6 +164,8 @@ const goBack = () => router.push('/')
 /* ---------- 8. Monaco 预加载 ---------- */
 const loadStatus = ref('loading')
 const editorReady = computed(() => loadStatus.value === 'success')
+const isStatusVisible = ref(true)
+
 async function preloadMonaco() {
   try {
     await import('monaco-editor')
@@ -160,13 +175,9 @@ async function preloadMonaco() {
     loadStatus.value = 'error'
   }
 }
-function navStatusClick() {
-  if (loadStatus.value === 'error') {
-    loadStatus.value = 'loading'
-    preloadMonaco()
-  } else if (loadStatus.value === 'loading') {
-    alert('Monaco 正在加载，请稍候')
-  }
+
+function hideStatus() {
+  isStatusVisible.value = false
 }
 
 /* ---------- 9. 空闲预拉取其它 chunk ---------- */
@@ -174,6 +185,8 @@ function prefetchIdle() {
   const doPrefetch = () => {
     AsyncContest.__asyncLoader && AsyncContest.__asyncLoader()
     AsyncUser.__asyncLoader && AsyncUser.__asyncLoader()
+    AsyncRank.__asyncLoader && AsyncRank.__asyncLoader()
+    AsyncProfile.__asyncLoader && AsyncProfile.__asyncLoader()
   }
   if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
     window.requestIdleCallback(doPrefetch, { timeout: 2000 })
@@ -194,7 +207,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 样式保持你原来的，无需改动 */
 .back-btn {
   background: #ef4444;
   color: #fff;
@@ -282,7 +294,6 @@ onMounted(async () => {
   contain-intrinsic-size: 800px;
   flex: 1;
   position: relative;
-  overflow: hidden;
   padding: 0;
 }
 .skeleton {
@@ -301,13 +312,9 @@ onMounted(async () => {
 .skeleton-line.w-80 { width: 80%; }
 .skeleton-line.w-85 { width: 85%; }
 .skeleton-line.w-90 { width: 90%; }
-@keyframes shine {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
 .tab-pane {
   height: 100%;
   width: 100%;
-  overflow: hidden;
+  overflow: auto;
 }
 </style>

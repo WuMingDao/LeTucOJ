@@ -1,9 +1,6 @@
 package com.LetucOJ.gateway.tool;
 
-import io.jsonwebtoken.lang.Collections;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -36,7 +33,6 @@ public class RoleRedirectFilter implements WebFilter {
                 .flatMap(auth -> {
                     if (auth != null && auth.isAuthenticated()) {
                         String path = exchange.getRequest().getURI().getPath();
-                        // 根路径->ROOT 角色内部转发示例
                         if ("/practice/list".equals(path)
                                 && (hasRole(auth, ROLE_PREFIX + "ROOT")
                                 || hasRole(auth, ROLE_PREFIX + "MANAGER"))) {
@@ -83,7 +79,6 @@ public class RoleRedirectFilter implements WebFilter {
                             return internalForward(exchange, "/contest/full/getContestInRoot", chain);
                         }
                     }
-                    // 不是需要转发的情况，继续原链路
                     return chain.filter(exchange);
                 });
     }
@@ -93,10 +88,6 @@ public class RoleRedirectFilter implements WebFilter {
                 .anyMatch(a -> a.getAuthority().equals(role));
     }
 
-    /**
-     * 内部转发：修改请求路径后，直接往下游 chain 继续处理，
-     * 浏览器对客户端来说只有一次请求，不会触发 CORS。
-     */
     private Mono<Void> internalForward(ServerWebExchange exchange,
                                        String newPath,
                                        WebFilterChain chain) {

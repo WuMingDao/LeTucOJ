@@ -5,7 +5,7 @@
     <form @submit.prevent="handleSubmit">
       <div class="grid-container">
 
-        <!-- name -->
+        <!-- lang -->
         <div class="form-item">
           <label for="data-name">{{ labels.name }}</label>
           <input
@@ -125,7 +125,7 @@ const labels = {
   note: '备注信息'
 }
 
-const renderedNote = computed(() => 
+const renderedNote = computed(() =>
   marked.parse(form.value.note || '')
 )
 
@@ -141,7 +141,7 @@ const fetchCompetitionData = async () => {
     })
     if (!res.ok) throw new Error('获取竞赛数据失败')
     const data = await res.json()
-    if (data.status !== 0 || !data.data) {
+    if (data.code !== '0' || !data.data) {
       throw new Error(data.error || '竞赛数据格式异常')
     }
     Object.assign(form.value, data.data)
@@ -181,7 +181,7 @@ const handleFormSubmit = async (method, endpoint) => {
     if (!res.ok) throw new Error('操作失败')
     const data = await res.json()
 
-    if (data.status === 0) {
+    if (data.code === '0') {
       if (isEdit.value) {
         alert('竞赛更新成功')
       } else {

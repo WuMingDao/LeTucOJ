@@ -1,16 +1,19 @@
 package com.LetucOJ.practice.service.impl;
 
+import com.LetucOJ.common.oss.MinioRepos;
+import com.LetucOJ.common.result.Result;
+import com.LetucOJ.common.result.ResultVO;
+import com.LetucOJ.common.result.errorcode.BaseErrorCode;
+import com.LetucOJ.common.result.errorcode.PracticeErrorCode;
 import com.LetucOJ.practice.client.RunClient;
 import com.LetucOJ.practice.model.*;
-import com.LetucOJ.practice.repos.MinioRepos;
 import com.LetucOJ.practice.repos.MybatisRepos;
 import com.LetucOJ.practice.service.PracticeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 @Service
 public class PracticeServiceImpl implements PracticeService {
@@ -24,111 +27,102 @@ public class PracticeServiceImpl implements PracticeService {
     @Autowired
     private MybatisRepos mybatisRepos;
 
-    public ResultVO submit(String pname, String qname, String code, boolean root) throws Exception {
+    public ResultVO submit(String pname, String qname, String code, String language, boolean root) throws Exception {
         try {
             List<String> inputs = new ArrayList<>();
             inputs.add(code);
-            String[] inputFiles;
 
             ProblemStatusDTO problemStatus = mybatisRepos.getStatus(qname);
-            System.out.println(problemStatus);
-            if (problemStatus == null) {
-                return new ResultVO((byte) 5, null, "practice/submit: Problem not found or not available");
-            } else if (problemStatus.getCaseAmount() <= 0) {
-                return new ResultVO((byte) 5, null, "practice/submit: No test cases available for this problem: " + qname + " " + problemStatus.getCaseAmount());
-            } else if (!problemStatus.isPublicProblem() && !root) {
-                return new ResultVO((byte) 5, null, "practice/submit: Problem is not available for practice");
-            }
 
-            try {
-                FileDTO fileDTO = getFile(qname, problemStatus.getCaseAmount(), FileDTO.fileType.INPUT);
-                if (fileDTO.getStatus() == 1) {
-                    return new ResultVO((byte) 5, null, "practice/submit: TestCase Not Found");
-                } else if (fileDTO.getStatus() == 2) {
-                    return new ResultVO((byte) 5, null, fileDTO.getFile()[0]);
-                } else {
-                    inputFiles = fileDTO.getFile();
-                }
-            } catch (RuntimeException e) {
-                return new ResultVO((byte) 5, null, "practice/submit: Error retrieving input files: " + e.getMessage());
+            if (problemStatus == null) {
+                return Result.failure(BaseErrorCode.PROBLEM_NOT_EXIST);
+            } else if (problemStatus.getCaseAmount() <= 0) {
+                return Result.failure(BaseErrorCode.NO_CASE_EXIST);
+            } else if (!problemStatus.isPublicProblem() && !root) {
+                return Result.failure(PracticeErrorCode.NOT_PUBLIC);
             }
-            inputs.addAll(Arrays.asList(inputFiles));
-            List<String> outputs = new ArrayList<>();
+            byte[][] inputBytesArrays;
+            try {
+                inputBytesArrays = getCases(qname, problemStatus.getCaseAmount(), 0);
+            } catch (RuntimeException e) {
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
+            }
+            for (byte[] inputBytes : inputBytesArrays) {
+                inputs.add(new String(inputBytes));
+            }
             String[] expectedOutputs;
+            byte[][] outputBytesArray;
             try {
-                FileDTO outputFileDTO = getFile(qname, problemStatus.getCaseAmount(), FileDTO.fileType.OUTPUT);
-                if (outputFileDTO.getStatus() == 1) {
-                    return new ResultVO((byte) 5, null, "practice/submit: Output files not found");
-                } else if (outputFileDTO.getStatus() == 2) {
-                    return new ResultVO((byte) 5, null, outputFileDTO.getFile()[0]);
-                } else {
-                    expectedOutputs = outputFileDTO.getFile();
-                }
+                outputBytesArray = getCases(qname, problemStatus.getCaseAmount(), 1);
             } catch (RuntimeException e) {
-                return new ResultVO((byte) 5, null, "practice/submit: Error retrieving output files: " + e.getMessage());
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             }
-            ResultVO runResult = runClient.run(inputs, "C");
-            System.out.println(runResult.getStatus());
-            if (runResult.getStatus() != 0) {
+            ResultVO runResult = runClient.run(inputs, language, qname);
+            if (!runResult.getCode().equals("0")) {
                 return runResult;
             }
-            CheckDTO checkResult = checkAnswer(expectedOutputs, ((List<String>)runResult.getData()).toArray(new String[expectedOutputs.length]));
-            if (checkResult.getStatus() == 0) {
-                System.out.println("Accepted");
+            expectedOutputs = getExpectedOutputs(outputBytesArray);
+            ResultVO resultVO = checkAnswer(expectedOutputs, ((List<String>)runResult.getData()).toArray(new String[expectedOutputs.length]));
+            if (resultVO.getCode().equals("0")) {
                 Integer check = mybatisRepos.checkCorrect(pname, qname);
                 if (check == null || check == 0) {
-                    mybatisRepos.insertCorrect(pname, qname);
+                    Integer res = mybatisRepos.insertCorrect(pname, qname);
+                    if (res == null || res == 0) {
+                        return Result.failure(BaseErrorCode.SERVICE_ERROR);
+                    }
                 }
-                return new ResultVO((byte) 0, null, null);
-            } else if (checkResult.getStatus() == 1) {
-                return new ResultVO((byte) 1, null, checkResult.getMessage());
-            } else {
-                return new ResultVO((byte) 5, null, checkResult.getMessage());
+                return Result.success();
             }
+            return resultVO;
         } catch (Exception e) {
-            return new ResultVO((byte) 5, null, "practice/submit: " + e.getMessage());
+            System.out.println(e);
+            return Result.failure(BaseErrorCode.SERVICE_ERROR);
         }
     }
 
-    private CheckDTO checkAnswer(String[] expected, String[] actual) {
+    private String[] getExpectedOutputs(byte[][] outputBytesArray) {
+        return Arrays.stream(outputBytesArray)
+                .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                .flatMap(s -> Arrays.stream(s.split("\\R")))
+                .toArray(String[]::new);
+    }
+
+    private ResultVO checkAnswer(String[] expected, String[] actual) {
         if (expected.length != actual.length) {
-            return new CheckDTO((byte) 2, "practice/checkAnswer: Test case count mismatch: expected " + expected.length + ", got " + actual.length);
+            return Result.failure(BaseErrorCode.SERVICE_ERROR);
         }
         for (int i = 0; i < expected.length; i++) {
+            System.out.println(expected[i] + " == " + actual[i]);
             if (!expected[i].equals(actual[i])) {
-                return new CheckDTO((byte) 1, "practice/checkAnswer: Test case " + (i + 1) + " failed: expected '" + expected[i] + "', got '" + actual[i] + "'");
+                String msg = "expect: " + expected[i].substring(0, Math.min(500, expected[i].length())) + " but actual: " + actual[i].substring(0, Math.min(500, actual[i].length())) + " at case " + (i + 1);
+                return Result.failure(BaseErrorCode.WRONG_ANSWER, msg);
             }
         }
-        return new CheckDTO((byte) 0, null);
+        return Result.success();
     }
 
-    private FileDTO getFile(String problemId, int count, FileDTO.fileType fileType) {
+    private byte[][] getCases(String problemId, int amount, int type) {
 
-        FileDTO fileDTO = new FileDTO();
-
-        String[] files = new String[count];
-
-        for (int i = 1; i <= count; i++) {
-            String file;
+        byte[][] cases = new byte[amount][];
+        for (int i = 1; i <= amount; i++) {
+            byte[] file;
+            String bucketName = "letucoj";
             try {
-                if (fileType == FileDTO.fileType.OUTPUT) {
-                    file = minioRepos.getFile(problemId, i, FileDTO.fileType.OUTPUT);
+                if (type == 1) {
+                    String objectName = "problems/" + problemId + "/output/" + i + ".txt";
+                    file = minioRepos.getFile(bucketName, objectName);
                 } else {
-                    file = minioRepos.getFile(problemId, i, FileDTO.fileType.INPUT);
+                    String objectName = "problems/" + problemId + "/input/" + i + ".txt";
+                    file = minioRepos.getFile(bucketName, objectName);
                 }
                 if (file == null) {
-                    fileDTO.setStatus((byte) 1);
-                    fileDTO.setFile(new String[] {"practice/getFile: File " + i + " not found"});
-                    return fileDTO;
+                    throw new Exception("practice/getCases: File " + i + " not found");
                 }
             } catch (Exception e) {
-                fileDTO.setStatus((byte) 2);
-                fileDTO.setFile(new String[] {"practice/getFile: Error retrieving file " + i + ": " + e.getMessage()});
-                return fileDTO;
+                throw new RuntimeException("practice/getCases: Error retrieving file " + i + ": " + e.getMessage());
             }
-            files[i - 1] = file;
+            cases[i - 1] = file;
         }
-        fileDTO.setFile(files);
-        return fileDTO;
+        return cases;
     }
 }

@@ -38,7 +38,6 @@
             </label>
           </div>
         </div>
-        <button class="btn" @click="applyFilters">更新</button>
       </div>
 
       <!-- 中：分页 -->
@@ -57,7 +56,6 @@
         >
           创建题目
         </button>
-        <button class="btn" @click="navigateToHistory">历史记录</button>
       </div>
     </div>
 
@@ -94,7 +92,7 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const instance = getCurrentInstance()
-const ip = instance?.appContext.config.globalProperties.$ip || 'localhost:7777'
+const ip = instance?.appContext.config.globalProperties.$ip
 
 /** ------------ 响应式状态 ------------ **/
 const allProblems = ref([])
@@ -168,18 +166,17 @@ const fetchProblems = async () => {
     })
 
     const json = await res.json()
-    if (json.status === 0 && Array.isArray(json.data.list)) {
+    if (json.code === "0" && Array.isArray(json.data.list)) {
       allProblems.value = json.data.list
       hasMore.value = json.data.amount > currentPage.value * pageSize
     } else {
       allProblems.value = []
       hasMore.value = false
-      alert(json.message || '加载失败')
     }
   } catch (e) {
     allProblems.value = []
     hasMore.value = false
-    alert('网络错误：' + (e?.message || e))
+    alert('无法连接到服务器')
   }
 }
 
@@ -203,12 +200,6 @@ function clickOutside(e) {
 }
 
 /** ------------ 搜索 / 排序 / 分页 ------------ **/
-const applyFilters = () => {
-  currentPage.value = 1
-  order.value = sortField.value || ''
-  like.value = searchKeyword.value.trim()
-  fetchProblems()
-}
 
 const handleSearch = () => {
   const kw = searchKeyword.value.trim()
@@ -240,7 +231,6 @@ watch(sortField, () => {
 
 /** ------------ 路由 ------------ **/
 const navigateToCreateProblem = () => router.push('/form')
-const navigateToHistory = () => router.push('/history')
 
 /** ------------ 启动 ------------ **/
 onMounted(() => {

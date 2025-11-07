@@ -1,7 +1,8 @@
 package com.LetucOJ.contest.repos;
 
-import com.LetucOJ.contest.model.db.*;
-import com.LetucOJ.contest.model.net.ContestProblemDTO;
+import com.LetucOJ.common.anno.LanguageConfigDO;
+import com.LetucOJ.contest.model.*;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -9,9 +10,8 @@ import java.util.List;
 
 @Repository
 @Mapper
-public interface MybatisRepos {
+public interface MybatisRepos extends BaseMapper<LanguageConfigDO> {
 
-    // --- Problem 相关 ---
     @Select("SELECT public > 0 as ispublic, showsolution, caseAmount FROM problem WHERE name = #{name}")
     ProblemStatusDTO getStatus(String name);
 
@@ -20,7 +20,6 @@ public interface MybatisRepos {
             "WHERE name = #{name}")
     FullInfoDTO getProblem(String name);
 
-    // --- Contest 相关 ---
     @Select("SELECT * FROM contest")
     List<ContestInfoDTO> getContestList();
 
@@ -43,7 +42,6 @@ public interface MybatisRepos {
             "WHERE name = #{name}")
     Integer updateContest(ContestInfoDTO contestInfoDTO);
 
-    // --- Contest–Problem 关联（题库中题目在某场比赛的权重） ---
     @Select("SELECT * FROM contest_problem WHERE contest_name = #{contestName}")
     List<ContestProblemDTO> getProblemList(@Param("contestName") String contestName);
 
@@ -65,7 +63,6 @@ public interface MybatisRepos {
     Integer getScoreByContestAndProblem(@Param("contestName") String contestName,
                                         @Param("problemName") String problemName);
 
-    // --- 添加参赛用户 ---
     @Insert("INSERT INTO contest_user (contest_name, user_name, cnname) " +
             "VALUES (#{contestName}, #{userName}, #{cnname})")
     Integer insertContestUser(@Param("contestName") String contestName,
@@ -77,7 +74,6 @@ public interface MybatisRepos {
                                   @Param("userName")    String userName);
 
 
-    // --- 排行榜（使用视图，动态组合所有用户×题目） ---
     @Select("SELECT contest_name AS contestName, " +
             "       user_name AS userName, " +
             "       problem_name AS problemName, " +
@@ -119,7 +115,6 @@ public interface MybatisRepos {
             "  AND problem_name = #{problemName}")
     Integer updateContestBoard(BoardDTO boardDTO);
 
-    // --- 提交记录 ---
     @Insert("INSERT INTO record " +
             "(userName, cnname, problemName, language, code, result, timeUsed, memoryUsed, submitTime) " +
             "VALUES " +
@@ -127,5 +122,5 @@ public interface MybatisRepos {
     Integer insertRecord(RecordDTO recordDTO);
 
     @Select("SELECT COUNT(*) FROM problem WHERE name = #{name}")
-    Integer problemExist(@Param("name") String name);
+    Integer problemExist(@Param("lang") String name);
 }

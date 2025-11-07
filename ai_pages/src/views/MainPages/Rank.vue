@@ -1,6 +1,6 @@
 <template>
   <div class="rank-page">
-    <h2 class="title">排行榜</h2>
+    <h2 class="title">用户排行榜</h2>
 
     <!-- 加载状态 -->
     <div v-if="loading" class="loading">加载中...</div>
@@ -23,8 +23,8 @@
         <tr
           v-for="(item, idx) in sortedData"
           :key="item.userName"
-          :class="medalClass(idx)"
-        >
+          :class="[medalClass(idx), 'clickable-row']"
+          @click="goToProfile(item.userName)"         >
           <td class="rank-number">{{ idx + 1 }}</td>
           <td>{{ item.cnname }}</td>
           <td>{{ item.userName }}</td>
@@ -38,15 +38,28 @@
 
 <script setup>
 import { ref, computed, onMounted, getCurrentInstance } from 'vue'
-import axios from 'axios'
+import { useRouter } from 'vue-router'
 
 /* ---------- 基础响应式数据 ---------- */
 const instance = getCurrentInstance()
-const ip = instance?.appContext.config.globalProperties.$ip || 'localhost:7777'
+const ip = instance?.appContext.config.globalProperties.$ip
 
 const rankData = ref([])   // 原始数据
 const loading  = ref(true)
 const error    = ref(null)
+
+const router = useRouter()
+
+/* ---------- 跳转到用户详情页 ---------- */
+function goToProfile(userName) {
+    const route = router.resolve({ 
+        name: 'othersProfile', 
+        query: { 
+            pname: userName 
+        } 
+    });
+    window.open(route.href, '_blank');
+}
 
 /* ---------- 排序：总分降序 -> 题数降序 -> 用户名升序 ---------- */
 const sortedData = computed(() =>
@@ -64,20 +77,27 @@ const medalClass = idx =>
 /* ---------- 获取数据 ---------- */
 async function fetchRankData() {
   try {
-    const token = localStorage.getItem('jwt')
-    const { data: res } = await axios.get(`http://${ip}/user/rank`, {
+    const token = localStorage.getItem('jwt');
+    const res = await fetch(`http://${ip}/user/rank`, {
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
-    })
-    if (res.status === 0) rankData.value = res.data || []
-    else throw new Error(res.error || '获取数据失败')
+    });
+    const { code, data, error } = await res.json(); // 一次性解构
+
+    if (code === '0') {
+      rankData.value = data || [];
+    } else {
+      throw new Error(error || '获取数据失败');
+    }
   } catch (err) {
-    error.value = err.message || '网络错误'
+    error.value = err.message || '网络错误';
   } finally {
-    loading.value = false
+    loading.value = false;
   }
+
 }
 
 onMounted(() => {

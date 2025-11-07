@@ -1,11 +1,17 @@
 package com.LetucOJ.practice.controller;
 
+import com.LetucOJ.common.anno.SubmitLimit;
+import com.LetucOJ.common.mq.MessageQueueProducer;
+import com.LetucOJ.common.mq.impl.Message;
+import com.LetucOJ.common.result.Result;
+import com.LetucOJ.common.result.ResultVO;
+import com.LetucOJ.common.result.errorcode.BaseErrorCode;
 import com.LetucOJ.practice.model.RecordDTO;
-import com.LetucOJ.practice.model.ResultVO;
 import com.LetucOJ.practice.repos.MybatisRepos;
 import com.LetucOJ.practice.service.PracticeService;
+import com.alibaba.fastjson.JSON;
+import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,27 +24,82 @@ public class SubmitController {
     @Autowired
     private MybatisRepos mybatisRepos;
 
+    @Resource
+    private MessageQueueProducer mqProducer;
+
     @PostMapping("/submit")
-    public ResultVO submit(@RequestParam("pname") String pname, @RequestParam("cnname") String cnname, @RequestParam("qname") String qname, @RequestParam("lang") String lang, @RequestBody String code) throws Exception {
-        ResultVO result = practiceService.submit(pname, qname, code, false);
-        Integer res = mybatisRepos.insertRecord(new RecordDTO(pname, cnname, qname, lang, code, result.getStatus() + " $ " + result.getError(), 0L, 0L, System.currentTimeMillis()));
-        if (res == null || res <= 0) {
-            return new ResultVO((byte) 5, null, "practice/submit: Failed to insert record into database");
+    @SubmitLimit
+    public ResultVO submit(
+            @RequestParam("lang") String lang,
+            @RequestParam("pname") String pname,
+            @RequestParam("qname") String qname,
+            @RequestParam("cnname") String cnname,
+            @RequestBody String code) throws Exception {
+        ResultVO result = practiceService.submit(pname, qname, code, lang, false);
+
+        try {
+            RecordDTO record = new RecordDTO(
+                    pname,
+                    cnname,
+                    qname,
+                    lang,
+                    code,
+                    result.getCode() + " $ " + result.getData(),
+                    0L,
+                    0L,
+                    System.currentTimeMillis()
+            );
+
+            Message message = Message.builder()
+                    .topic("submission")
+                    .tag("submission")
+                    .key(pname)
+                    .body(JSON.toJSONString(record))
+                    .build();
+
+            mqProducer.send(message);
+
+        } catch (Exception e) {
         }
+
         return result;
     }
 
     @PostMapping("/submitInRoot")
-    public ResultVO submitInRoot(@RequestParam("pname") String pname, @RequestParam("cnname") String cnname, @RequestParam("qname") String qname, @RequestParam("lang") String lang, @RequestBody String code) throws Exception {
-        ResultVO result = practiceService.submit(pname, qname, code, true);
+    @SubmitLimit
+    public ResultVO submitInRoot(
+            @RequestParam("lang") String lang,
+            @RequestParam("pname") String pname,
+            @RequestParam("qname") String qname,
+            @RequestParam("cnname") String cnname,
+            @RequestBody String code) throws Exception {
+
+        ResultVO result = practiceService.submit(pname, qname, code, lang, true);
+
         try {
-            Integer res = mybatisRepos.insertRecord(new RecordDTO(pname, cnname, qname, lang, code, result.getStatus() + " $ " + result.getError(), 0L, 0L, System.currentTimeMillis()));
-            if (res == null || res <= 0) {
-                return new ResultVO((byte) 5, null, "practice/submitInRoot: Failed to insert record into database");
-            }
-            return result;
+            RecordDTO record = new RecordDTO(
+                    pname,
+                    cnname,
+                    qname,
+                    lang,
+                    code,
+                    result.getCode() + " $ " + result.getData(),
+                    0L,
+                    0L,
+                    System.currentTimeMillis()
+            );
+
+            Message message = Message.builder()
+                    .topic("submission")
+                    .tag("submission")
+                    .key(pname)
+                    .body(JSON.toJSONString(record))
+                    .build();
+
+            mqProducer.send(message);
+
         } catch (Exception e) {
-            return new ResultVO((byte) 5, null, "practice/submitInRoot: " + e.getMessage());
         }
+        return result;
     }
 }

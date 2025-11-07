@@ -57,10 +57,12 @@
           <textarea id="content" v-model="form.content" rows="10" placeholder="请输入题目描述 Markdown"></textarea>
         </div>
 
-        <!-- 实时预览 -->
         <div class="form-item full">
           <label>题目描述（预览）</label>
-          <div class="markdown-preview" v-html="renderedMarkdown"></div>
+          <MarkdownRenderer 
+            :rawContent="form.content" 
+            containerClass="markdown-preview" 
+          />
         </div>
 
         <!-- 题解 Monaco -->
@@ -118,7 +120,7 @@ import {
   getCurrentInstance,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { marked } from 'marked'
+import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 import * as monaco from 'monaco-editor'
 import { setupMyC } from '../components/monaco-c'
 import 'monaco-editor/min/vs/editor/editor.main.css'
@@ -164,11 +166,6 @@ const labels = {
   freq: '使用频率',
   solution: '题解',
 }
-
-/* -------------------------------------------------- */
-/* 3. Markdown 预览                                      */
-/* -------------------------------------------------- */
-const renderedMarkdown = computed(() => marked.parse(form.value.content || ''))
 
 /* -------------------------------------------------- */
 /* 4. Monaco 编辑器（去重版）                             */
@@ -242,7 +239,7 @@ async function addProblem() {
       },
       body: JSON.stringify(form.value),
     }).then((r) => r.json())
-    if (res.status === 0) {
+    if (res.code === "0") {
       alert('添加成功')
       router.replace({ query: { name: form.value.name } })
     } else {
@@ -264,7 +261,7 @@ async function updateProblem() {
       },
       body: JSON.stringify(form.value),
     }).then((r) => r.json())
-    if (res.status === 0) {
+    if (res.code === "0") {
       alert('更新成功')
     } else {
       alert('更新失败: ' + JSON.stringify(res))
@@ -315,7 +312,7 @@ async function submitCase(index) {
         output: inputOutputSections.value[index].output,
       }),
     }).then((r) => r.json())
-    if (res.status === 0) {
+    if (res.code === "0") {
       inputOutputSections.value[index].output = '已提交'
       await nextTick()
       adjustHeightForOutput(index)
@@ -349,16 +346,16 @@ async function getOutput(index) {
       body: JSON.stringify({
         input: inputOutputSections.value[index].input,
         code: form.value.solution,
-        name: form.value.name,
+        name: form.value.name
       }),
     }).then((r) => r.json())
-    if (res.status === 0) {
+    if (res.code === "0") {
       const out = Array.isArray(res.data) ? res.data[0] : res.data
       inputOutputSections.value[index].output = out
       await nextTick()
       adjustHeightForOutput(index)
     } else {
-      alert('获取输出失败: ' + res.error)
+      alert('获取输出失败: ' + res.message)
     }
   } catch (e) {
     alert('获取输出出错: ' + e.message)

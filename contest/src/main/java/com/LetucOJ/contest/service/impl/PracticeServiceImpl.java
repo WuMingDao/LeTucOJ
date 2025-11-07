@@ -1,18 +1,21 @@
 package com.LetucOJ.contest.service.impl;
 
+import com.LetucOJ.common.oss.MinioRepos;
+import com.LetucOJ.common.result.Result;
+import com.LetucOJ.common.result.ResultVO;
+import com.LetucOJ.common.result.errorcode.BaseErrorCode;
+import com.LetucOJ.common.result.errorcode.ContestErrorCode;
 import com.LetucOJ.contest.client.RunClient;
-import com.LetucOJ.contest.model.db.BoardDTO;
-import com.LetucOJ.contest.model.db.ContestInfoDTO;
-import com.LetucOJ.contest.model.db.ProblemStatusDTO;
-import com.LetucOJ.contest.model.method.CheckDTO;
-import com.LetucOJ.contest.model.minio.FileDTO;
-import com.LetucOJ.contest.model.net.ResultVO;
-import com.LetucOJ.contest.repos.MinioRepos;
+import com.LetucOJ.contest.model.BoardDTO;
+import com.LetucOJ.contest.model.ContestInfoDTO;
+import com.LetucOJ.contest.model.ProblemStatusDTO;
 import com.LetucOJ.contest.repos.MybatisRepos;
+import com.LetucOJ.contest.service.DBService;
 import com.LetucOJ.contest.service.PracticeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,167 +34,175 @@ public class PracticeServiceImpl implements PracticeService {
     @Autowired
     private MybatisRepos mybatisRepos;
 
+    @Autowired
+    private DBService dbService;
+
     public ResultVO submit(String userName, String cnname, String questionName, String contestName, String code, String lang, boolean root) throws Exception {
         try {
+
+            // 合法性检验
+
             List<String> inputs = new ArrayList<>();
             inputs.add(code);
-            String[] inputFiles;
 
             ContestInfoDTO contestInfo = mybatisRepos.getContest(contestName);
 
+            ResultVO attended = dbService.getUserStatus(userName, contestName);
+            if (!attended.getCode().equals("0") && !root) {
+                return Result.failure(ContestErrorCode.USER_NOT_ATTEND);
+            }
+
             if (contestInfo == null) {
-                return new ResultVO((byte) 5, null, "contest/submit: Contest not found or not available");
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             } else if (!contestInfo.isPublicContest() && !root) {
-                return new ResultVO((byte) 5, null, "contest/submit: Contest is not available");
+                return Result.failure(ContestErrorCode.CONTEST_NOT_PUBLIC);
             }
 
             Integer score = mybatisRepos.getScoreByContestAndProblem(contestName, questionName);
             if (score == null || score == 0) {
-                return new ResultVO((byte) 5, null, "contest/submit: Problem not found in contest");
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             }
 
-            // check time
             if (!root) {
                 LocalDateTime now = LocalDateTime.now();
                 LocalDateTime start = contestInfo.getStart();
                 LocalDateTime end = contestInfo.getEnd();
+                System.out.println(now);
+                System.out.println(start);
+                System.out.println(end);
                 if (start != null && end != null) {
                     if (now.isBefore(start)) {
                         long secondsToStart = Duration.between(now, start).getSeconds();
-                        return new ResultVO((byte) 5, null,
-                                "contest/submit: Contest has not started yet, start in "
-                                        + secondsToStart + " seconds");
+                        return Result.failure(ContestErrorCode.CONTEST_NOT_START, secondsToStart);
                     } else if (now.isAfter(end)) {
-                        return new ResultVO((byte) 5, null, "contest/submit: Contest has already ended");
+                        return Result.failure(ContestErrorCode.CONTEST_FINISHED);
                     }
                 } else {
-                    return new ResultVO((byte) 5, null, "contest/submit: Contest start or end time is not set");
+                    return Result.failure(BaseErrorCode.SERVICE_ERROR);
                 }
             }
+
+            // 获取测试数据
 
             ProblemStatusDTO problemStatus = mybatisRepos.getStatus(questionName);
             if (problemStatus == null) {
-                return new ResultVO((byte) 5, null, "contest/submit: Problem not found or not available");
+                return Result.failure(BaseErrorCode.PROBLEM_NOT_EXIST);
             } else if (problemStatus.getCaseAmount() <= 0) {
-                return new ResultVO((byte) 5, null, "contest/submit: No test cases available for this problem");
+                return Result.failure(BaseErrorCode.NO_CASE_EXIST);
             }
 
+            byte[][] inputBytesArrays;
             try {
-                FileDTO fileDTO = getFile(questionName, problemStatus.getCaseAmount(), FileDTO.fileType.INPUT);
-                if (fileDTO.getStatus() == 1) {
-                    return new ResultVO((byte) 5, null, "contest/submit: TestCase Not Found");
-                } else if (fileDTO.getStatus() == 2) {
-                    return new ResultVO((byte) 5, null, fileDTO.getFile()[0]);
-                } else {
-                    inputFiles = fileDTO.getFile();
-                }
+                inputBytesArrays = getCases(questionName, problemStatus.getCaseAmount(), 0);
             } catch (RuntimeException e) {
-                return new ResultVO((byte) 5, null, "contest/submit: Error retrieving input files: " + e.getMessage());
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             }
-            inputs.addAll(Arrays.asList(inputFiles));
+            for (byte[] inputBytes : inputBytesArrays) {
+                inputs.add(new String(inputBytes));
+            }
             String[] expectedOutputs;
+            byte[][] outputBytesArray;
             try {
-                FileDTO outputFileDTO = getFile(questionName, problemStatus.getCaseAmount(), FileDTO.fileType.OUTPUT);
-                if (outputFileDTO.getStatus() == 1) {
-                    return new ResultVO((byte) 5, null, "contest/submit: Output files not found");
-                } else if (outputFileDTO.getStatus() == 2) {
-                    return new ResultVO((byte) 5, null, outputFileDTO.getFile()[0]);
-                } else {
-                    expectedOutputs = outputFileDTO.getFile();
-                }
+                outputBytesArray = getCases(questionName, problemStatus.getCaseAmount(), 1);
             } catch (RuntimeException e) {
-                return new ResultVO((byte) 5, null, "contest/submit: Error retrieving output files: " + e.getMessage());
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             }
-            ResultVO runResult = runClient.run(inputs, lang);
-            System.out.println(runResult.getStatus());
-            if (runResult.getStatus() != 0) {
+
+
+            // 运行用户代码
+
+            ResultVO runResult = runClient.run(inputs, lang, questionName);
+
+
+            // 处理运行结果
+
+
+            System.out.println(runResult.getCode());
+            if (!runResult.getCode().equals("0")) {
                 return runResult;
             }
-            CheckDTO checkResult = checkAnswer(expectedOutputs, ((List<String>) runResult.getData()).toArray(new String[expectedOutputs.length]));
+            expectedOutputs = getExpectedOutputs(outputBytesArray);
 
-            if (checkResult.getStatus() == 2) {
-                return new ResultVO((byte) 5, null, checkResult.getMessage());
-            }
+            ResultVO resultVO = checkAnswer(expectedOutputs, ((List<String>) runResult.getData()).toArray(new String[expectedOutputs.length]));
 
             int getScore;
             if (contestInfo.getMode().equals("add")) {
-                getScore = (int) ( ( (float) checkResult.getCaseIndex() / (float) expectedOutputs.length) * (float) score);
+                getScore = resultVO.getCode().equals("0") ? score : (int) ( ( (float) resultVO.getData() / (float) expectedOutputs.length) * (float) score);
             } else if (contestInfo.getMode().equals("all")) {
-                getScore = checkResult.getStatus() == 0 ? score : 0;
+                getScore = resultVO.getCode().equals("0") ? score : 0;
             } else {
-                return new ResultVO((byte) 5, null, "contest/submit: Invalid contest mode");
+                return Result.failure(BaseErrorCode.SERVICE_ERROR);
             }
-
-            System.out.println("getScore: " + getScore);
-            System.out.println("score: " + score);
-            System.out.println("index: " + checkResult.getCaseIndex());
-            System.out.println("expectedOutputs: " + expectedOutputs.length);
 
             BoardDTO boardDTO = mybatisRepos.getContestBoardByUserAndProblem(contestName, userName, questionName);
             if (boardDTO == null) {
                 boardDTO = new BoardDTO(contestName, userName, cnname, questionName, getScore, 1, LocalDateTime.now());
                 Integer res = mybatisRepos.insertContestBoard(boardDTO);
-                if (res == null || res == 0) {
-                    return new ResultVO((byte) 5, null, "contest/submit: Board Insert failed");
+                if (res == null || res <= 0) {
+                    System.out.println("failed to insert board");
+                    return Result.failure(BaseErrorCode.SERVICE_ERROR);
                 }
             } else {
                 boardDTO.setScore(Math.max(boardDTO.getScore(), getScore));
                 Integer res = mybatisRepos.updateContestBoard(boardDTO);
                 if (res == null || res <= 0) {
-                    return new ResultVO((byte) 5, null, "contest/submit: Error updating contest board");
+                    System.out.println("failed to update board");
+                    return Result.failure(BaseErrorCode.SERVICE_ERROR);
                 }
             }
-
-            if (checkResult.getStatus() == 1) {
-                return new ResultVO((byte) 1, null, "failed in " + checkResult.getCaseIndex() + "th case");
+            if (resultVO.getCode().equals("0")) {
+                return Result.success();
             } else {
-                return new ResultVO((byte) 0, null, null);
+                Integer caseIndex = (Integer) resultVO.getData();
+                return Result.failure(BaseErrorCode.WRONG_ANSWER, "wrong in case " + (caseIndex + 1));
             }
         } catch (Exception e) {
-            return new ResultVO((byte) 5, null, "contest/submit: Error during submission: " + e.getMessage());
+            System.out.println(e.getMessage());
+            return Result.failure(BaseErrorCode.SERVICE_ERROR);
         }
     }
 
-    private CheckDTO checkAnswer(String[] expected, String[] actual) {
+    private ResultVO checkAnswer(String[] expected, String[] actual) {
         if (expected.length != actual.length) {
-            return new CheckDTO(2, 0, "contest/checkAnswer: Wrong number of answers");
+            return Result.failure(BaseErrorCode.SERVICE_ERROR);
         }
         for (int i = 0; i < expected.length; i++) {
             if (!expected[i].equals(actual[i])) {
-                return new CheckDTO(1, i, "contest/checkAnswer: Wrong answer");
+                return Result.failure(BaseErrorCode.WRONG_ANSWER, i);
             }
         }
-        return new CheckDTO(0, expected.length, "contest/checkAnswer: Correct answer");
+        return Result.success();
     }
 
-    private FileDTO getFile(String problemId, int count, FileDTO.fileType fileType) {
+    private String[] getExpectedOutputs(byte[][] outputBytesArray) {
+        return Arrays.stream(outputBytesArray)
+                .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                .flatMap(s -> Arrays.stream(s.split("\\R")))
+                .toArray(String[]::new);
+    }
 
-        FileDTO fileDTO = new FileDTO();
+    private byte[][] getCases(String problemId, int amount, int type) {
 
-        String[] files = new String[count];
-
-        for (int i = 1; i <= count; i++) {
-            String file;
+        byte[][] cases = new byte[amount][];
+        for (int i = 1; i <= amount; i++) {
+            byte[] file;
+            String bucketName = "letucoj";
             try {
-                if (fileType == FileDTO.fileType.OUTPUT) {
-                    file = minioRepos.getFile(problemId, i, FileDTO.fileType.OUTPUT);
+                if (type == 1) {
+                    String objectName = "problems/" + problemId + "/output/" + i + ".txt";
+                    file = minioRepos.getFile(bucketName, objectName);
                 } else {
-                    file = minioRepos.getFile(problemId, i, FileDTO.fileType.INPUT);
+                    String objectName = "problems/" + problemId + "/input/" + i + ".txt";
+                    file = minioRepos.getFile(bucketName, objectName);
                 }
                 if (file == null) {
-                    fileDTO.setStatus((byte) 1);
-                    fileDTO.setFile(new String[] {"contest/getFile: File " + i + " not found"});
-                    return fileDTO;
+                    throw new Exception("practice/getCases: File " + i + " not found");
                 }
             } catch (Exception e) {
-                fileDTO.setStatus((byte) 2);
-                fileDTO.setFile(new String[] {"contest/getFile: Error retrieving file " + i + ": " + e.getMessage()});
-                return fileDTO;
+                throw new RuntimeException("practice/getCases: Error retrieving file " + i + ": " + e.getMessage());
             }
-            files[i - 1] = file;
+            cases[i - 1] = file;
         }
-        fileDTO.setFile(files);
-        return fileDTO;
+        return cases;
     }
-
 }

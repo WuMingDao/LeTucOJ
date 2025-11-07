@@ -2,8 +2,14 @@ server:
   port: 7777
 
 spring:
+  config:
+    import: "optional:classpath:default.yaml"
   application:
     name: gateway
+  data:
+    redis:
+      host: redis
+      port: 6379
   cloud:
     gateway:
       routes:
@@ -27,7 +33,6 @@ spring:
           uri: http://advice:9999
           predicates:
             - Path=/advice/**
-      #跨域配置
       globalcors:
         cors-configurations:
           '[/**]':
@@ -37,19 +42,14 @@ spring:
             allowCredentials: true
       default-filters:
         - DedupeResponseHeader=Vary Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
-  data:
-    redis:
-      host: redis
-      port: 6379
 
-logging:
-  level:
-    org.springframework.cloud.gateway: DEBUG
-    org.springframework.web.cors: DEBUG
+#logging:
+#  level:
+#    org.springframework.cloud.gateway: DEBUG
+#    org.springframework.web.cors: DEBUG
 
 auth:
   service:
     url: http://user:5555
     on: false
-
 

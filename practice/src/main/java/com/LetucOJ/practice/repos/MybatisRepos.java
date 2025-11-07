@@ -1,6 +1,8 @@
 package com.LetucOJ.practice.repos;
 
+import com.LetucOJ.common.anno.LanguageConfigDO;
 import com.LetucOJ.practice.model.*;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -9,7 +11,7 @@ import java.util.Set;
 
 @Repository
 @Mapper
-public interface MybatisRepos {
+public interface MybatisRepos extends BaseMapper<LanguageConfigDO> {
 
     @Select("SELECT public > 0 AS publicProblem, showsolution > 0 AS showSolution, caseAmount FROM problem WHERE name = #{name}")
     ProblemStatusDTO getStatus(String name);
@@ -60,11 +62,17 @@ public interface MybatisRepos {
     @Delete("DELETE FROM problem WHERE name = #{name}")
     Integer deleteProblem(String name);
 
-    @Select("SELECT * FROM record")
-    List<RecordDTO> getAllRecords();
+    @Select("SELECT * FROM record ORDER BY submitTime DESC LIMIT #{start}, #{limit}")
+    List<RecordDTO> getAllRecords(int start, int limit);
 
-    @Select("SELECT * FROM record WHERE userName = #{userName}")
-    List<RecordDTO> getRecordsByName(String userName);
+    @Select("SELECT COUNT(*) FROM record")
+    Integer getAllRecordsCount();
+
+    @Select("SELECT * FROM record WHERE userName = #{userName} ORDER BY submitTime DESC LIMIT #{start}, #{limit}")
+    List<RecordDTO> getRecordsByName(String userName, int start, int limit);
+
+    @Select("SELECT COUNT(*) FROM record WHERE userName = #{userName}")
+    Integer getRecordsByNameCount(String userName);
 
     @Insert("INSERT INTO record (userName, cnname, problemName, language, code, result, timeUsed, memoryUsed, submitTime) VALUES (#{userName}, #{cnname}, #{problemName}, #{language}, #{code}, #{result}, #{timeUsed}, #{memoryUsed}, #{submitTime})")
     Integer insertRecord(RecordDTO recordDTO);

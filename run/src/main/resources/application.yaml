@@ -4,9 +4,19 @@ server:
     connection-timeout: 60000
 
 spring:
+  config:
+    import: "optional:classpath:default.yaml"
   application:
     name: run
   servlet:
     multipart:
       max-request-size: 10MB
       max-file-size: 10MB
+logging:
+  level:
+    org.springframework.security: DEBUG
+    root: INFO
+    org.springframework: DEBUG
+    com.zaxxer.hikari: DEBUG
+    org.mybatis: DEBUG
+    com.OMS.practice_service: DEBUG

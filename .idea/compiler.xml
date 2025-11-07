@@ -3,6 +3,11 @@
   <component name="CompilerConfiguration">
     <annotationProcessing>
       <profile default="true" name="Default" enabled="true" />
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+      </profile>
       <profile name="Annotation profile for OMS2.0" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
@@ -12,19 +17,17 @@
         </processorPath>
         <module name="practice" />
         <module name="contest" />
-        <module name="sys" />
         <module name="common" />
+        <module name="advice" />
+        <module name="run" />
+        <module name="sys" />
         <module name="user" />
         <module name="gateway" />
-      </profile>
-      <profile name="Maven default annotation processors profile" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="gateWay" target="17" />
+      <module name="sandbox" target="17" />
       <module name="userDTO" target="17" />
     </bytecodeTargetLevel>
   </component>
@@ -38,6 +41,7 @@
       <module name="gateway" options="-parameters" />
       <module name="practice" options="-parameters" />
       <module name="run" options="-parameters" />
+      <module name="sandbox" options="-parameters" />
       <module name="sys" options="-parameters" />
       <module name="user" options="-parameters" />
       <module name="userDTO" options="-parameters" />
